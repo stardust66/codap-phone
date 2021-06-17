@@ -1,6 +1,6 @@
 {
   "name": "codap-phone",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "A library for using the CODAP data interactive plugin API.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
