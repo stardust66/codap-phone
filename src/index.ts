@@ -63,11 +63,12 @@ const phone: CodapPhone = new IframePhoneRpcEndpoint(
   null
 );
 
-const DEFAULT_PLUGIN_WIDTH = 300;
-const DEFAULT_PLUGIN_HEIGHT = 320;
-
 // Initialize
-export async function initPhone(title: string): Promise<void> {
+export async function initializePlugin(
+  title: string,
+  width: number,
+  height: number
+): Promise<void> {
   return new Promise<void>((resolve, reject) =>
     phone.call(
       {
@@ -76,8 +77,8 @@ export async function initPhone(title: string): Promise<void> {
         values: {
           title,
           dimensions: {
-            width: DEFAULT_PLUGIN_WIDTH,
-            height: DEFAULT_PLUGIN_HEIGHT,
+            width,
+            height,
           },
         },
       },
