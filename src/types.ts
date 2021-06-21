@@ -249,20 +249,6 @@ export enum ContextChangeOperation {
   DependentCases = "dependentCases",
 }
 
-export const mutatingOperations = [
-  ContextChangeOperation.UpdateCases,
-  ContextChangeOperation.CreateCases,
-  ContextChangeOperation.DeleteCases,
-  ContextChangeOperation.CreateAttribute,
-  ContextChangeOperation.UpdateAttribute,
-  ContextChangeOperation.DeleteAttribute,
-  ContextChangeOperation.MoveAttribute,
-  ContextChangeOperation.UpdateCollection,
-  ContextChangeOperation.CreateCollection,
-  ContextChangeOperation.DeleteCollection,
-  ContextChangeOperation.DependentCases,
-];
-
 export enum DocumentChangeOperations {
   DataContextCountChanged = "dataContextCountChanged",
 }

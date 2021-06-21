@@ -1,4 +1,4 @@
-import { IframePhoneRpcEndpoint } from "iframe-phone";
+import { phone } from "./endpoint";
 import {
   Dataset,
   CodapComponentType,
@@ -9,28 +9,14 @@ import {
   GetContextResponse,
   GetCasesResponse,
   GetCaseResponse,
-  CodapPhone,
-  CodapInitiatedResource,
-  ContextChangeOperation,
-  mutatingOperations,
-  DocumentChangeOperations,
-  CodapInitiatedCommand,
   ReturnedCase,
   Collection,
-  ReturnedCollection,
   DataContext,
-  ReturnedDataContext,
   CodapListResource,
   CodapIdentifyingInfo,
   CaseTable,
   GetDataListResponse,
-  GetFunctionNamesResponse,
-  CodapAttribute,
 } from "./types";
-import {
-  callUpdateListenersForContext,
-  callAllContextListeners,
-} from "./listeners";
 import {
   resourceFromContext,
   itemFromContext,
@@ -44,10 +30,13 @@ import {
   fillCollectionWithDefaults,
   collectionsEqual,
   uniqueName,
+  getNewName,
+  normalizeDataContext,
 } from "./util";
 import * as Actions from "./actions";
 import * as Cache from "./cache";
 
+export * from "./types";
 export {
   addNewContextListener,
   removeNewContextListener,
@@ -55,15 +44,13 @@ export {
   removeContextUpdateListener,
 } from "./listeners";
 
-const phone: CodapPhone = new IframePhoneRpcEndpoint(
-  codapRequestHandler,
-  "data-interactive",
-  window.parent,
-  null,
-  null
-);
-
-// Initialize
+/**
+ * Set up the plugin window with the given title, width, and height.
+ *
+ * @param title - Title of the plugin window
+ * @param width - Width of the plugin window, in pixels
+ * @param height - Height of the plugin window, in pixels
+ */
 export async function initializePlugin(
   title: string,
   width: number,
@@ -93,97 +80,23 @@ export async function initializePlugin(
   );
 }
 
-const getNewName = (function () {
-  let count = 0;
-  return () => {
-    const name = `CodapFlow_${count}`;
-    count += 1;
-    return name;
-  };
-})();
-
 /**
- * Catch notifications from CODAP and call appropriate listeners
+ * Make a bundled request to CODAP with multiple calls
+ *
+ * @param requests - Array of CodapRequests to send
+ * @returns A promise of an array of responses that correspond with the requests
  */
-function codapRequestHandler(
-  command: CodapInitiatedCommand,
-  callback: (r: CodapResponse) => void
-): void {
-  console.group("CODAP");
-  console.log(command);
-  console.groupEnd();
-
-  if (command.action !== CodapActions.Notify) {
-    callback({ success: true });
-    return;
-  }
-
-  if (
-    command.resource === CodapInitiatedResource.DocumentChangeNotice &&
-    command.values.operation ===
-      DocumentChangeOperations.DataContextCountChanged
-  ) {
-    callAllContextListeners();
-    callback({ success: true });
-    return;
-  }
-
-  if (
-    command.resource.startsWith(
-      CodapInitiatedResource.DataContextChangeNotice
-    ) &&
-    Array.isArray(command.values)
-  ) {
-    // FIXME: Using flags here we can process all notifications in the list
-    // without needlessly updating for each one, but this doesn't seem like
-    // the most elegant solution.
-    let contextUpdate = false;
-    let contextListUpdate = false;
-
-    // Context name is between the first pair of brackets
-    const contextName = command.resource.slice(
-      command.resource.search("\\[") + 1,
-      command.resource.length - 1
-    );
-
-    for (const value of command.values) {
-      contextUpdate =
-        contextUpdate || mutatingOperations.includes(value.operation);
-      contextListUpdate =
-        contextListUpdate ||
-        value.operation === ContextChangeOperation.UpdateContext;
-
-      // Check for case update or deletion and invalidate case cache
-      if (
-        value.operation === ContextChangeOperation.DeleteCases ||
-        value.operation === ContextChangeOperation.UpdateCases
-      ) {
-        const caseIDs = value.result?.caseIDs;
-        if (Array.isArray(caseIDs)) {
-          caseIDs.map(Cache.invalidateCase);
-        }
-      }
-    }
-
-    if (contextUpdate) {
-      Cache.invalidateContext(contextName);
-      callUpdateListenersForContext(contextName);
-    }
-
-    if (contextListUpdate) {
-      callAllContextListeners();
-    }
-  }
-
-  callback({ success: true });
-}
-
-function callMultiple(requests: CodapRequest[]): Promise<CodapResponse[]> {
+export function callMultiple(
+  requests: CodapRequest[]
+): Promise<CodapResponse[]> {
   return new Promise<CodapResponse[]>((resolve) => {
     phone.call(requests, (responses) => resolve(responses));
   });
 }
 
+/**
+ * Get identifying information (name, title) for all existing data contexts.
+ */
 export function getAllDataContexts(): Promise<CodapIdentifyingInfo[]> {
   return new Promise<CodapIdentifyingInfo[]>((resolve, reject) =>
     phone.call(
@@ -202,6 +115,13 @@ export function getAllDataContexts(): Promise<CodapIdentifyingInfo[]> {
   );
 }
 
+/**
+ * Get all CODAP collections for the given context.
+ *
+ * @param context - Name of the context
+ * @returns A promise of a list of identifying information of the collections
+ * in the given context.
+ */
 export function getAllCollections(
   context: string
 ): Promise<CodapIdentifyingInfo[]> {
@@ -222,6 +142,13 @@ export function getAllCollections(
   );
 }
 
+/**
+ * Get a CODAP case in the context `context` with the id `id`.
+ *
+ * @param context - Context in which to retrieve the case
+ * @param id - ID of the case to retrieve
+ * @returns A promise of the specified case.
+ */
 function getCaseById(context: string, id: number): Promise<ReturnedCase> {
   return new Promise<ReturnedCase>((resolve, reject) => {
     const cached = Cache.getCase(id);
@@ -247,6 +174,12 @@ function getCaseById(context: string, id: number): Promise<ReturnedCase> {
   });
 }
 
+/**
+ * Get all attributes for a particular data context.
+ *
+ * @param context - Name of the data context
+ * @returns A promise of an array of identifying information for the attributes
+ */
 export async function getAllAttributes(
   context: string
 ): Promise<CodapIdentifyingInfo[]> {
@@ -284,7 +217,7 @@ export async function getAllAttributes(
 }
 
 /**
- * Get data from a data context
+ * Get data from a data context.
  *
  * @param context - The name of the data context
  * @returns An array of the data rows where each row is an object
@@ -336,6 +269,12 @@ export async function getDataFromContext(
   );
 }
 
+/**
+ * Get data context object.
+ *
+ * @param contextName - The name of the desired data context
+ * @returns A promise of the desired data context.
+ */
 export function getDataContext(contextName: string): Promise<DataContext> {
   return new Promise<DataContext>((resolve, reject) => {
     const cached = Cache.getContext(contextName);
@@ -361,60 +300,15 @@ export function getDataContext(contextName: string): Promise<DataContext> {
   });
 }
 
-// Copies a list of attributes, only copying the fields relevant to our
-// representation of attributes and omitting any extra fields (cid, etc).
-function copyAttrs(
-  attrs: CodapAttribute[] | undefined
-): CodapAttribute[] | undefined {
-  return attrs?.map((attr) => {
-    return {
-      name: attr.name,
-      title: attr.title,
-      type: attr.type,
-      colormap: attr.colormap,
-      description: attr.description,
-      editable: attr.editable,
-      formula: attr.formula,
-      hidden: attr.hidden,
-      precision: attr.type === "numeric" ? attr.precision : undefined,
-      unit: attr.type === "numeric" ? attr.unit : undefined,
-    };
-  }) as CodapAttribute[];
-}
-
-// In the returned collections, parents show up as numeric ids, so before
-// reusing, we need to look up the names of the parent collections.
-function normalizeParentNames(collections: ReturnedCollection[]): Collection[] {
-  const normalized = [];
-  for (const c of collections) {
-    let newParent;
-    if (c.parent) {
-      newParent = collections.find(
-        (collection) => collection.id === c.parent
-      )?.name;
-    }
-
-    normalized.push({
-      name: c.name,
-      title: c.title,
-      attrs: copyAttrs(c.attrs),
-      labels: c.labels,
-      parent: newParent,
-    });
-  }
-
-  return normalized as Collection[];
-}
-
-function normalizeDataContext(context: ReturnedDataContext): DataContext {
-  return {
-    name: context.name,
-    title: context.title,
-    description: context.description,
-    collections: normalizeParentNames(context.collections),
-  };
-}
-
+/**
+ * Create a data context.
+ *
+ * @param name - The name of the new data context
+ * @param collections - The collections in the new data context
+ * @param title - The title of the new data context
+ * @returns A promise of the identifying information of the newly created data
+ * context
+ */
 async function createDataContext(
   name: string,
   collections: Collection[],
@@ -442,31 +336,15 @@ async function createDataContext(
   );
 }
 
-export async function createDataInteractive(
-  name: string,
-  url: string
-): Promise<void> {
-  return new Promise<void>((resolve, reject) =>
-    phone.call(
-      {
-        action: CodapActions.Create,
-        resource: CodapResource.InteractiveFrame,
-        values: {
-          url,
-          name,
-        },
-      },
-      (response) => {
-        if (response.success) {
-          resolve();
-        } else {
-          reject(new Error("Failed to create data interactive"));
-        }
-      }
-    )
-  );
-}
-
+/**
+ * Create a data context by providing a dataset object.
+ *
+ * @param dataset - The given dataset object
+ * @param name - The name of the new data context
+ * @param title - The title of the new data context
+ * @returns A promise of the identifying information of the newly created data
+ * context
+ */
 export async function createContextWithDataset(
   dataset: Dataset,
   name: string,
@@ -482,6 +360,12 @@ export async function createContextWithDataset(
   return newDatasetDescription;
 }
 
+/**
+ * Insert data items into a data context.
+ *
+ * @param contextName - The name of the target data context
+ * @param data - The items to insert
+ */
 export function insertDataItems(
   contextName: string,
   data: Record<string, unknown>[]
@@ -504,7 +388,72 @@ export function insertDataItems(
   );
 }
 
-function createCollections(
+/**
+ * Update context with dataset object.
+ *
+ * @param contextName - The name of the context to update
+ * @param dataset - The dataset object with which to update the context
+ */
+export async function updateContextWithDataSet(
+  contextName: string,
+  dataset: Dataset
+): Promise<void> {
+  const context = await getDataContext(contextName);
+  const requests = [];
+
+  for (const collection of context.collections) {
+    requests.push(Actions.deleteAllCases(contextName, collection.name));
+  }
+
+  const normalizedCollections = dataset.collections.map(
+    fillCollectionWithDefaults
+  );
+
+  if (!collectionsEqual(context.collections, normalizedCollections)) {
+    const concatNames = (nameAcc: string, collection: Collection) =>
+      nameAcc + collection.name;
+    const uniqueName =
+      context.collections.reduce(concatNames, "") +
+      dataset.collections.reduce(concatNames, "");
+
+    // Create placeholder empty collection, since data contexts must have at least
+    // one collection
+    requests.push(
+      Actions.createCollections(contextName, [
+        {
+          name: uniqueName,
+          labels: {},
+        },
+      ])
+    );
+
+    // Delete old collections
+    for (const collection of context.collections) {
+      requests.push(Actions.deleteCollection(contextName, collection.name));
+    }
+
+    // Insert new collections and delete placeholder
+    requests.push(Actions.createCollections(contextName, dataset.collections));
+    requests.push(Actions.deleteCollection(contextName, uniqueName));
+  }
+
+  requests.push(Actions.insertDataItems(contextName, dataset.records));
+
+  const responses = await callMultiple(requests);
+  for (const response of responses) {
+    if (!response.success) {
+      throw new Error(`Failed to update ${contextName}`);
+    }
+  }
+}
+
+/**
+ * Create collections in a data context.
+ *
+ * @param context - The target data context
+ * @param collections - The collections to create
+ */
+export function createCollections(
   context: string,
   collections: Collection[]
 ): Promise<void> {
@@ -519,7 +468,16 @@ function createCollections(
   );
 }
 
-function deleteCollection(context: string, collection: string): Promise<void> {
+/**
+ * Delete a collection in a data context.
+ *
+ * @param context - The name of the context in which the collection is located
+ * @param collection - The name of the collection to delete
+ */
+export function deleteCollection(
+  context: string,
+  collection: string
+): Promise<void> {
   return new Promise<void>((resolve, reject) =>
     phone.call(Actions.deleteCollection(context, collection), (response) => {
       if (response.success) {
@@ -533,6 +491,12 @@ function deleteCollection(context: string, collection: string): Promise<void> {
   );
 }
 
+/**
+ * Delete all cases in the given collection.
+ *
+ * @param context - The name of the context in which the collection is located
+ * @param collection - The name of the collection in which to delete all data
+ */
 export async function deleteAllCases(
   context: string,
   collection: string
@@ -550,6 +514,14 @@ export async function deleteAllCases(
 
 const DEFAULT_TABLE_WIDTH = 300;
 const DEFAULT_TABLE_HEIGHT = 300;
+
+/**
+ * Create a table.
+ *
+ * @param name - The name of the new table
+ * @param context - The data context for the new table
+ * @returns A promise of the newly created table
+ */
 export async function createTable(
   name: string,
   context: string
@@ -582,10 +554,21 @@ export async function createTable(
 
 const TEXT_WIDTH = 100;
 const TEXT_HEIGHT = 100;
-const TEXT_FONT_SIZE = 2;
+
+/**
+ * Create CODAP text.
+ *
+ * @param name - The name of the new text
+ * @param content - The content of the new text
+ * @returns A promise of the name of the newly created text
+ */
 export async function createText(
   name: string,
-  content: string
+  content: string,
+  {
+    width = TEXT_WIDTH,
+    height = TEXT_HEIGHT,
+  }: { width: number; height: number }
 ): Promise<string> {
   const textName = await ensureUniqueName(
     name,
@@ -599,16 +582,13 @@ export async function createText(
         resource: CodapResource.Component,
         values: {
           type: CodapComponentType.Text,
-          name: textName,
+          name: name,
           dimensions: {
-            width: TEXT_WIDTH,
-            height: TEXT_HEIGHT,
+            width: width,
+            height: height,
           },
           text: {
             object: "value",
-            data: {
-              fontSize: TEXT_FONT_SIZE,
-            },
             document: {
               children: [
                 {
@@ -638,6 +618,12 @@ export async function createText(
   );
 }
 
+/**
+ * Update CODAP Text.
+ *
+ * @param name - Name of the text object to update
+ * @param content - New content of the text object
+ */
 export async function updateText(name: string, content: string): Promise<void> {
   return new Promise<void>((resolve, reject) =>
     phone.call(
@@ -645,15 +631,10 @@ export async function updateText(name: string, content: string): Promise<void> {
         action: CodapActions.Update,
         resource: resourceFromComponent(name),
         values: {
-          dimensions: {
-            width: TEXT_WIDTH,
-            height: TEXT_HEIGHT,
-          },
+          type: CodapComponentType.Text,
+          name: name,
           text: {
             object: "value",
-            data: {
-              fontSize: TEXT_FONT_SIZE,
-            },
             document: {
               children: [
                 {
@@ -683,6 +664,14 @@ export async function updateText(name: string, content: string): Promise<void> {
   );
 }
 
+/**
+ * Using `name` as a base, return a name that is unique in CODAP.
+ *
+ * @param name - Base name
+ * @param resourceType - The type of resource for which to check for name
+ * duplicates
+ * @returns A promise of a unique name with `name` as a base
+ */
 async function ensureUniqueName(
   name: string,
   resourceType: CodapListResource
@@ -712,6 +701,15 @@ async function ensureUniqueName(
   );
 }
 
+/**
+ * Create a data context and table with the given dataset object.
+ *
+ * @param dataset - Dataset from which to create a context and table
+ * @param name - Base name for the context and table
+ * @returns A promise of a tuple, the first element of which is the identifying
+ * information for the newly created context, and the second element of which
+ * is the created table
+ */
 export async function createTableWithDataset(
   dataset: Dataset,
   name?: string
