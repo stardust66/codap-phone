@@ -197,8 +197,8 @@ function copyAttrs(
       editable: attr.editable,
       formula: attr.formula,
       hidden: attr.hidden,
-      precision: attr.type === "numeric" ? attr.precision : undefined,
-      unit: attr.type === "numeric" ? attr.unit : undefined,
+      precision: attr.precision,
+      unit: attr.unit,
     };
   }) as CodapAttribute[];
 }
