@@ -96,6 +96,16 @@ function codapRequestHandler(
           caseIDs.map(Cache.invalidateCase);
         }
       }
+
+      // Invalidate all cases in a context if attributes get moved or deleted,
+      // etc. Cannot do this more granularly because attribute moves do not
+      // give enough information.
+      if (
+        value.operation === ContextChangeOperation.MoveAttribute ||
+        value.operation === ContextChangeOperation.DeleteAttribute
+      ) {
+        Cache.invalidateCasesInContext(contextName);
+      }
     }
 
     if (contextUpdate) {

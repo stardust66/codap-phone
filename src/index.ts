@@ -164,7 +164,7 @@ function getCaseById(context: string, id: number): Promise<ReturnedCase> {
       (response: GetCaseResponse) => {
         if (response.success) {
           const result = response.values.case;
-          Cache.setCase(id, result);
+          Cache.setCase(context, id, result);
           resolve(result);
         } else {
           reject(new Error(`Failed to get case in ${context} with id ${id}`));
