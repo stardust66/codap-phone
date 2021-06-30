@@ -70,7 +70,7 @@ export async function initializePlugin(
         },
       },
       (response) => {
-        if (response.success) {
+        if (response && response.success) {
           resolve();
         } else {
           reject(new Error("Failed to update CODAP interactive frame"));
