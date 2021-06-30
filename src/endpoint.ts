@@ -26,6 +26,7 @@ export const mutatingOperations = [
   ContextChangeOperation.UpdateCases,
   ContextChangeOperation.CreateCases,
   ContextChangeOperation.DeleteCases,
+  ContextChangeOperation.MoveCases,
   ContextChangeOperation.CreateAttribute,
   ContextChangeOperation.UpdateAttribute,
   ContextChangeOperation.DeleteAttribute,
@@ -34,6 +35,8 @@ export const mutatingOperations = [
   ContextChangeOperation.CreateCollection,
   ContextChangeOperation.DeleteCollection,
   ContextChangeOperation.DependentCases,
+  ContextChangeOperation.HideAttribute,
+  ContextChangeOperation.UnhideAttribute,
 ];
 
 /**

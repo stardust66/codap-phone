@@ -10,8 +10,7 @@ export enum CodapResource {
   Component = "component",
   Collection = "collection",
   CollectionList = "collectionList",
-  EvalExpression = "evalExpression",
-  FunctionNames = "functionNames",
+  FormulaEngine = "formulaEngine",
 }
 
 export enum CodapListResource {
@@ -41,13 +40,13 @@ export type CodapRequest =
   | CreateTextRequest
   | UpdateTextRequest
   | EvalExpressionRequest
-  | GetFunctionNamesRequest;
+  | GetFunctionInfoRequest;
 
 export type CreateInteractiveFrameRequest = {
   action: CodapActions.Create;
-  resource: CodapResource.InteractiveFrame;
+  resource: CodapResource.Component;
 
-  values: { url: string; name: string };
+  values: { URL: string; name: string; type: "game" };
 };
 
 export type UpdateInteractiveFrameRequest = {
@@ -76,11 +75,7 @@ export type GetListRequest = {
 export type CreateContextRequest = {
   action: CodapActions.Create;
   resource: CodapResource.DataContext;
-  values: {
-    name: string;
-    title?: string;
-    collections: Collection[];
-  };
+  values: DataContext;
 };
 
 export type CreateCollectionsRequest = {
@@ -119,17 +114,18 @@ export interface UpdateTextRequest {
 }
 
 export interface EvalExpressionRequest {
-  action: CodapActions.Get;
-  resource: CodapResource.EvalExpression;
+  action: CodapActions.Notify;
+  resource: CodapResource.FormulaEngine;
   values: {
+    request: "evalExpression";
     source: string;
     records: Record<string, unknown>[];
   };
 }
 
-export interface GetFunctionNamesRequest {
+export interface GetFunctionInfoRequest {
   action: CodapActions.Get;
-  resource: CodapResource.FunctionNames;
+  resource: CodapResource.FormulaEngine;
 }
 
 export interface CodapResponse {
@@ -172,8 +168,12 @@ interface TableResponse extends CodapResponse {
   values: CaseTable;
 }
 
-export interface GetFunctionNamesResponse extends CodapResponse {
-  values: string[];
+export interface GetFunctionInfoResponse extends CodapResponse {
+  values: {
+    [category: string]: {
+      [fname: string]: FunctionInfo;
+    };
+  };
 }
 
 type EvalExpressionResponse =
@@ -207,8 +207,8 @@ export type CodapPhone = {
   call(r: UpdateTextRequest, cb: (r: CodapResponse) => void): void;
   call(r: EvalExpressionRequest, cb: (r: EvalExpressionResponse) => void): void;
   call(
-    r: GetFunctionNamesRequest,
-    cb: (r: GetFunctionNamesResponse) => void
+    r: GetFunctionInfoRequest,
+    cb: (r: GetFunctionInfoResponse) => void
   ): void;
   call(r: CodapRequest[], cb: (r: CodapResponse[]) => void): void;
 };
@@ -229,11 +229,16 @@ export enum ContextChangeOperation {
   SelectCases = "selectCases",
   UpdateContext = "updateDataContext",
 
-  // Despite the documentation, the first three of these are plural, while the
+  // Triggered when sorting a column.
+  MoveCases = "moveCases",
+
+  // Despite the documentation, the first five of these are plural, while the
   // last is singular
   CreateAttribute = "createAttributes",
   UpdateAttribute = "updateAttributes",
   DeleteAttribute = "deleteAttributes",
+  HideAttribute = "hideAttributes",
+  UnhideAttribute = "unhideAttributes",
   MoveAttribute = "moveAttribute",
 
   // Not sure where this is documented, but it is triggered when a collection
@@ -251,6 +256,7 @@ export enum ContextChangeOperation {
 
 export enum DocumentChangeOperations {
   DataContextCountChanged = "dataContextCountChanged",
+  DataContextDeleted = "dataContextDeleted",
 }
 
 export type CodapInitiatedCommand =
@@ -271,7 +277,15 @@ export type CodapInitiatedCommand =
       action: CodapActions.Notify;
       resource: CodapInitiatedResource.DocumentChangeNotice;
       values: {
-        operation: DocumentChangeOperations;
+        operation: DocumentChangeOperations.DataContextCountChanged;
+      };
+    }
+  | {
+      action: CodapActions.Notify;
+      resource: CodapInitiatedResource.DocumentChangeNotice;
+      values: {
+        operation: DocumentChangeOperations.DataContextDeleted;
+        deletedContext: string;
       };
     }
   | {
@@ -283,12 +297,21 @@ export type CodapInitiatedCommand =
       }[];
     };
 
+// The `metadata` property of data contexts is undocumented but described here:
+// https://codap.concord.org/forums/topic/accessing-dataset-description-through-plugin-api/
+export interface ContextMetadata {
+  description?: string;
+  importDate?: string;
+  source?: string;
+}
+
 // https://github.com/concord-consortium/codap/wiki/CODAP-Data-Interactive-Plugin-API#datacontexts
 export interface DataContext {
   name: string;
   title?: string;
   description?: string;
   collections: Collection[];
+  metadata?: ContextMetadata;
 }
 
 export interface ReturnedDataContext extends Omit<DataContext, "collections"> {
@@ -317,14 +340,10 @@ export interface ReturnedCollection extends Omit<Collection, "parent"> {
 }
 
 // https://github.com/concord-consortium/codap/wiki/CODAP-Data-Interactive-Plugin-API#attributes
-export type CodapAttribute =
-  | BaseAttribute
-  | CategoricalAttribute
-  | NumericAttribute;
-
-export interface RawAttribute {
+export interface CodapAttribute {
   name: string;
   title?: string;
+  type?: "categorical" | "numeric" | "date" | "qualitative" | "boundary" | null;
   colormap?:
     | Record<string, string>
     | {
@@ -336,26 +355,8 @@ export interface RawAttribute {
   editable?: boolean;
   formula?: string;
   hidden?: boolean;
-}
-
-export interface BaseAttribute extends RawAttribute {
-  type?: null;
-}
-
-export interface CategoricalAttribute extends RawAttribute {
-  type?: "categorical";
-  colormap?: Record<string, string>;
-}
-
-export interface NumericAttribute extends RawAttribute {
-  type?: "numeric";
   precision?: number;
   unit?: string | null;
-  colormap?: {
-    "high-attribute-color": string;
-    "low-attribute-color": string;
-    "attribute-color": string;
-  };
 }
 
 // https://github.com/concord-consortium/codap/wiki/CODAP-Data-Interactive-Plugin-API#attributelocations
@@ -507,3 +508,23 @@ type InteractiveFrame = {
   };
   savedState: Record<string, unknown>;
 };
+
+export interface FunctionInfo {
+  name: string;
+  category: string;
+  description: string;
+  displayName: string;
+  maxArgs: number;
+  minArgs: number;
+  examples: string[];
+  args: {
+    name: string;
+
+    // In practice, this can be"number", "expression", "value", "any",
+    // "boolean", "attribute", "string", "constant", "filter", "string or
+    // regular expression"
+    type: string;
+    required: boolean;
+    description: string;
+  }[];
+}
