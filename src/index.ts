@@ -12,6 +12,7 @@ import {
   ReturnedCase,
   Collection,
   DataContext,
+  ContextMetadata,
   CodapListResource,
   CodapIdentifyingInfo,
   CaseTable,
@@ -303,26 +304,26 @@ export function getDataContext(contextName: string): Promise<DataContext> {
 /**
  * Create a data context.
  *
- * @param name - The name of the new data context
- * @param collections - The collections in the new data context
- * @param title - The title of the new data context
+ * @param context - The data context to create
  * @returns A promise of the identifying information of the newly created data
  * context
  */
-async function createDataContext(
-  name: string,
-  collections: Collection[],
-  title?: string
-): Promise<CodapIdentifyingInfo> {
+async function createDataContext({
+  name,
+  title,
+  collections,
+  metadata,
+}: DataContext): Promise<CodapIdentifyingInfo> {
   return new Promise<CodapIdentifyingInfo>((resolve, reject) =>
     phone.call(
       {
         action: CodapActions.Create,
         resource: CodapResource.DataContext,
         values: {
-          name: name,
+          name,
           title: title !== undefined ? title : name,
-          collections: collections,
+          collections,
+          metadata,
         },
       },
       (response) => {
@@ -342,19 +343,22 @@ async function createDataContext(
  * @param dataset - The given dataset object
  * @param name - The name of the new data context
  * @param title - The title of the new data context
+ * @param metadata - Additional metadata for the new data context
  * @returns A promise of the identifying information of the newly created data
  * context
  */
 export async function createContextWithDataset(
   dataset: Dataset,
   name: string,
-  title?: string
+  title?: string,
+  metadata?: ContextMetadata
 ): Promise<CodapIdentifyingInfo> {
-  const newDatasetDescription = await createDataContext(
+  const newDatasetDescription = await createDataContext({
     name,
-    dataset.collections,
-    title
-  );
+    title,
+    metadata,
+    collections: dataset.collections,
+  });
 
   await insertDataItems(newDatasetDescription.name, dataset.records);
   return newDatasetDescription;
@@ -706,13 +710,15 @@ async function ensureUniqueName(
  *
  * @param dataset - Dataset from which to create a context and table
  * @param name - Base name for the context and table
+ * @param description - Description of the new table
  * @returns A promise of a tuple, the first element of which is the identifying
  * information for the newly created context, and the second element of which
  * is the created table
  */
 export async function createTableWithDataset(
   dataset: Dataset,
-  name?: string
+  name?: string,
+  description?: string
 ): Promise<[CodapIdentifyingInfo, CaseTable]> {
   let baseName;
   if (!name) {
@@ -736,7 +742,14 @@ export async function createTableWithDataset(
   );
 
   // Create context and table;
-  const newContext = await createContextWithDataset(dataset, contextName);
+  const newContext = await createContextWithDataset(
+    dataset,
+    contextName,
+    contextName,
+    {
+      description,
+    }
+  );
 
   const newTable = await createTable(tableName, contextName);
   return [newContext, newTable];
