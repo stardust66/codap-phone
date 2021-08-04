@@ -17,6 +17,8 @@ import {
   CodapIdentifyingInfo,
   CaseTable,
   GetDataListResponse,
+  InteractiveFrame,
+  ReturnedInteractiveFrame,
 } from "./types";
 import {
   resourceFromContext,
@@ -79,6 +81,29 @@ export async function initializePlugin(
       }
     )
   );
+}
+
+export function getInteractiveFrame(): Promise<ReturnedInteractiveFrame> {
+  return new Promise<ReturnedInteractiveFrame>((resolve, reject) =>
+    phone.call(
+      {
+        action: CodapActions.Get,
+        resource: CodapResource.InteractiveFrame,
+      },
+      (response) => {
+        if (response && response.success) {
+          resolve(response.values);
+        } else {
+          reject(new Error("Failed to get interactive frame."));
+        }
+      }
+    )
+  );
+}
+
+export async function dismissPlugin(): Promise<void> {
+  const id = (await getInteractiveFrame()).id;
+  await deleteComponent(String(id));
 }
 
 /**
@@ -513,6 +538,24 @@ export async function deleteAllCases(
         reject(new Error("Failed to delete all cases"));
       }
     })
+  );
+}
+
+export function deleteComponent(componentNameOrId: string): Promise<void> {
+  return new Promise<void>((resolve, reject) =>
+    phone.call(
+      {
+        action: CodapActions.Delete,
+        resource: resourceFromComponent(componentNameOrId),
+      },
+      (response) => {
+        if (response.success) {
+          resolve();
+        } else {
+          reject();
+        }
+      }
+    )
   );
 }
 

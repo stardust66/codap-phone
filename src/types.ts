@@ -57,6 +57,11 @@ export type UpdateInteractiveFrameRequest = {
   values: Partial<Omit<InteractiveFrame, "interactiveState">>;
 };
 
+export type GetInteractiveFrameRequest = {
+  action: CodapActions.Get;
+  resource: CodapResource.InteractiveFrame;
+};
+
 export type GetContextListRequest = {
   action: CodapActions.Get;
   resource: CodapResource.DataContextList;
@@ -176,6 +181,10 @@ export interface GetFunctionInfoResponse extends CodapResponse {
   };
 }
 
+interface GetInteractiveFrameResponse extends CodapResponse {
+  values: ReturnedInteractiveFrame;
+}
+
 type EvalExpressionResponse =
   | {
       success: true;
@@ -191,6 +200,10 @@ type EvalExpressionResponse =
 export type CodapPhone = {
   call(r: CreateInteractiveFrameRequest, cb: (r: CodapResponse) => void): void;
   call(r: UpdateInteractiveFrameRequest, cb: (r: CodapResponse) => void): void;
+  call(
+    r: GetInteractiveFrameRequest,
+    cb: (r: GetInteractiveFrameResponse) => void
+  ): void;
   call(r: GetContextListRequest, cb: (r: ListResponse) => void): void;
   call(r: GetListRequest, cb: (r: ListResponse) => void): void;
   call(r: GetRequest, cb: (r: GetDataResponse) => void): void;
@@ -489,7 +502,7 @@ export interface Guide extends CodapComponent {
 }
 
 // https://github.com/concord-consortium/codap/wiki/CODAP-Data-Interactive-Plugin-API#the-interactiveframe-object
-type InteractiveFrame = {
+export interface InteractiveFrame {
   name: string;
   title: string;
   version: string;
@@ -507,7 +520,12 @@ type InteractiveFrame = {
     height: boolean;
   };
   savedState: Record<string, unknown>;
-};
+}
+
+export interface ReturnedInteractiveFrame
+  extends Omit<InteractiveFrame, "savedState"> {
+  id: number;
+}
 
 export interface FunctionInfo {
   name: string;
